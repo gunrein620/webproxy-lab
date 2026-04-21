@@ -104,105 +104,105 @@ void doit(int fd)
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg)
 {
-  char buf[MAXLINE], body[MAXBUF];
+  char buf[MAXLINE], body[MAXBUF]; // buf는 응답 헤더 한 줄씩 만들 때 쓰고, body는 브라우저에 보여줄 HTML 본문이다.
 
   /* Build the HTTP response body */
-  sprintf(body, "<html><title>Tiny Error</title>");
-  sprintf(body + strlen(body), "<body bgcolor=\"ffffff\">\r\n");
-  sprintf(body + strlen(body), "%s: %s\r\n", errnum, shortmsg);
-  sprintf(body + strlen(body), "<p>%s: %s\r\n", longmsg, cause);
-  sprintf(body + strlen(body), "<hr><em>The Tiny Web server</em>\r\n");
+  sprintf(body, "<html><title>Tiny Error</title>");                    // 에러 페이지 HTML의 시작 부분을 만든다.
+  sprintf(body + strlen(body), "<body bgcolor=\"ffffff\">\r\n");       // 기존 body 뒤에 body 태그를 이어 붙인다.
+  sprintf(body + strlen(body), "%s: %s\r\n", errnum, shortmsg);        // 예: "404: Not found" 같은 에러 제목을 넣는다.
+  sprintf(body + strlen(body), "<p>%s: %s\r\n", longmsg, cause);       // 사람이 읽을 수 있는 자세한 에러 설명을 넣는다.
+  sprintf(body + strlen(body), "<hr><em>The Tiny Web server</em>\r\n"); // 에러 페이지 하단에 서버 이름을 넣는다.
 
   /* Print the HTTP response */
-  sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-  Rio_writen(fd, buf, strlen(buf));
-  sprintf(buf, "Content-type: text/html\r\n");
-  Rio_writen(fd, buf, strlen(buf));
-  sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-  Rio_writen(fd, buf, strlen(buf));
-  Rio_writen(fd, body, strlen(body));
+  sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg); // HTTP 응답의 상태줄을 만든다. 예: "HTTP/1.0 404 Not found"
+  Rio_writen(fd, buf, strlen(buf));                     // 상태줄을 클라이언트 소켓으로 보낸다.
+  sprintf(buf, "Content-type: text/html\r\n");          // 에러 본문이 HTML이라고 브라우저에 알려주는 헤더를 만든다.
+  Rio_writen(fd, buf, strlen(buf));                     // Content-type 헤더를 클라이언트에 보낸다.
+  sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body)); // HTML 본문 길이를 알리고, 빈 줄로 헤더 끝을 표시한다.
+  Rio_writen(fd, buf, strlen(buf));                             // Content-length 헤더와 빈 줄을 클라이언트에 보낸다.
+  Rio_writen(fd, body, strlen(body));                           // 실제 에러 HTML 본문을 클라이언트에 보낸다.
 }
 
 void read_requesthdrs(rio_t *rp)
 {
-  char buf[MAXLINE];
+  char buf[MAXLINE]; // 요청 헤더 한 줄을 임시로 담는 버퍼다.
 
-  Rio_readlineb(rp, buf, MAXLINE);
-  while (strcmp(buf, "\r\n"))
+  Rio_readlineb(rp, buf, MAXLINE); // 요청줄 다음의 첫 번째 헤더 줄을 읽는다.
+  while (strcmp(buf, "\r\n"))      // 빈 줄("\r\n")이 나올 때까지, 즉 헤더가 끝날 때까지 반복한다.
   {
-    Rio_readlineb(rp, buf, MAXLINE);
-    printf("%s", buf);
+    Rio_readlineb(rp, buf, MAXLINE); // 다음 헤더 줄을 읽어서 소켓 입력에서 소비한다.
+    printf("%s", buf);               // 읽은 헤더를 서버 로그에 출력한다.
   }
-  return;
+  return; // 헤더 끝까지 읽었으므로 호출한 함수로 돌아간다.
 }
 
 int parse_uri(char *uri, char *filename, char *cgiargs)
 {
-  char *ptr;
+  char *ptr; // 동적 요청에서 '?' 위치를 가리키기 위한 포인터다.
 
-  if (!strstr(uri, "cgi-bin"))
+  if (!strstr(uri, "cgi-bin")) // URI에 "cgi-bin"이 없으면 정적 콘텐츠 요청으로 판단한다.
   {
     /* Static content */
-    strcpy(cgiargs, "");
-    strcpy(filename, ".");
-    strcat(filename, uri);
-    if (uri[strlen(uri) - 1] == '/')
-      strcat(filename, "home.html");
-    return 1;
+    strcpy(cgiargs, "");                // 정적 콘텐츠는 CGI 인자가 없으므로 빈 문자열로 둔다.
+    strcpy(filename, ".");              // 서버의 현재 디렉터리를 기준으로 파일 경로를 만들기 시작한다.
+    strcat(filename, uri);              // 예: uri "/godzilla.gif" -> filename "./godzilla.gif"
+    if (uri[strlen(uri) - 1] == '/')     // URI가 "/"로 끝나면 디렉터리 요청으로 보고 기본 파일을 붙인다.
+      strcat(filename, "home.html");    // 예: uri "/" -> filename "./home.html"
+    return 1;                           // 정적 콘텐츠임을 호출자에게 알린다.
   }
   else
   {
     /* Dynamic content */
-    ptr = index(uri, '?');
+    ptr = index(uri, '?'); // 동적 URI에서 프로그램 경로와 인자를 나누는 '?'를 찾는다.
     if (ptr)
     {
-      strcpy(cgiargs, ptr + 1);
-      *ptr = '\0';
+      strcpy(cgiargs, ptr + 1); // '?' 뒤 문자열을 CGI 인자로 저장한다. 예: "a=1&b=2"
+      *ptr = '\0';              // '?' 자리를 문자열 끝으로 바꿔 uri를 프로그램 경로까지만 남긴다.
     }
     else
-      strcpy(cgiargs, "");
-    strcpy(filename, ".");
-    strcat(filename, uri);
-    return 0;
+      strcpy(cgiargs, "");      // '?'가 없으면 CGI 인자는 빈 문자열이다.
+    strcpy(filename, ".");      // 서버의 현재 디렉터리를 기준으로 실행 파일 경로를 만들기 시작한다.
+    strcat(filename, uri);      // 예: uri "/cgi-bin/adder" -> filename "./cgi-bin/adder"
+    return 0;                   // 동적 콘텐츠임을 호출자에게 알린다.
   }
 }
 
 void serve_static(int fd, char *filename, int filesize)
 {
-  int srcfd;
-  char *srcp, filetype[MAXLINE], buf[MAXBUF];
+  int srcfd;                                     // 정적 파일을 열었을 때 얻는 파일 디스크립터다.
+  char *srcp, filetype[MAXLINE], buf[MAXBUF];   // srcp는 mmap된 파일 시작 주소, filetype은 MIME 타입, buf는 응답 헤더 버퍼다.
 
   /* Send response headers to client */
-  get_filetype(filename, filetype);
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
-  sprintf(buf + strlen(buf), "Server: Tiny Web Server\r\n");
-  sprintf(buf + strlen(buf), "Connection: close\r\n");
-  sprintf(buf + strlen(buf), "Content-length: %d\r\n", filesize);
-  sprintf(buf + strlen(buf), "Content-type: %s\r\n\r\n", filetype);
-  Rio_writen(fd, buf, strlen(buf));
-  printf("Response headers:\n");
-  printf("%s", buf);
+  get_filetype(filename, filetype);                              // 파일 확장자를 보고 브라우저에 알려줄 MIME 타입을 정한다.
+  sprintf(buf, "HTTP/1.0 200 OK\r\n");                           // 요청 성공을 알리는 HTTP 응답 상태줄을 만든다.
+  sprintf(buf + strlen(buf), "Server: Tiny Web Server\r\n");     // 응답을 보낸 서버 이름을 헤더에 추가한다.
+  sprintf(buf + strlen(buf), "Connection: close\r\n");           // 응답 후 연결을 닫겠다고 클라이언트에게 알린다.
+  sprintf(buf + strlen(buf), "Content-length: %d\r\n", filesize); // 응답 본문이 몇 바이트인지 알려준다.
+  sprintf(buf + strlen(buf), "Content-type: %s\r\n\r\n", filetype); // 본문 타입을 알려주고, 빈 줄로 헤더 끝을 표시한다.
+  Rio_writen(fd, buf, strlen(buf));                              // 완성된 응답 헤더를 클라이언트 소켓으로 보낸다.
+  printf("Response headers:\n");                                  // 서버 터미널에 응답 헤더 로그 제목을 출력한다.
+  printf("%s", buf);                                              // 실제로 보낸 응답 헤더를 로그로 출력한다.
 
   /* Send response body to client */
-  srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-  Close(srcfd);
-  Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  srcfd = Open(filename, O_RDONLY, 0);                         // 정적 파일을 읽기 전용으로 연다.
+  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);  // 파일 내용을 메모리에 매핑해서 srcp로 접근할 수 있게 한다.
+  Close(srcfd);                                                // mmap 후에는 파일 디스크립터가 필요 없으므로 닫는다.
+  Rio_writen(fd, srcp, filesize);                              // 매핑된 파일 내용을 그대로 클라이언트 소켓에 보낸다.
+  Munmap(srcp, filesize);                                      // 사용한 메모리 매핑을 해제한다.
 }
 
 void get_filetype(char *filename, char *filetype)
 {
-  if (strstr(filename, ".html"))
-    strcpy(filetype, "text/html");
-  else if (strstr(filename, ".gif"))
-    strcpy(filetype, "image/gif");
-  else if (strstr(filename, ".png"))
-    strcpy(filetype, "image/png");
-  else if (strstr(filename, ".jpg"))
-    strcpy(filetype, "image/jpeg");
+  if (strstr(filename, ".html"))       // 파일 이름에 .html이 들어 있으면 HTML 문서로 판단한다.
+    strcpy(filetype, "text/html");     // 브라우저가 HTML로 렌더링하도록 MIME 타입을 설정한다.
+  else if (strstr(filename, ".gif"))   // 파일 이름에 .gif가 들어 있으면 GIF 이미지로 판단한다.
+    strcpy(filetype, "image/gif");     // 브라우저가 GIF 이미지로 처리하도록 MIME 타입을 설정한다.
+  else if (strstr(filename, ".png"))   // 파일 이름에 .png가 들어 있으면 PNG 이미지로 판단한다.
+    strcpy(filetype, "image/png");     // 브라우저가 PNG 이미지로 처리하도록 MIME 타입을 설정한다.
+  else if (strstr(filename, ".jpg"))   // 파일 이름에 .jpg가 들어 있으면 JPEG 이미지로 판단한다.
+    strcpy(filetype, "image/jpeg");    // 브라우저가 JPEG 이미지로 처리하도록 MIME 타입을 설정한다.
   else
-    strcpy(filetype, "text/plain");
+    strcpy(filetype, "text/plain");    // 모르는 확장자는 일반 텍스트로 처리한다.
 }
 
 void serve_dynamic(int fd, char *filename, char *cgiargs)
