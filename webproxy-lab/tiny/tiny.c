@@ -48,56 +48,56 @@ int main(int argc, char **argv)
 
 void doit(int fd)
 {
-  int is_static;
-  struct stat sbuf;
-  char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-  char filename[MAXLINE], cgiargs[MAXLINE];
-  rio_t rio;
+  int is_static;                                                        // 요청이 정적 콘텐츠면 1, 동적 콘텐츠면 0을 저장한다.
+  struct stat sbuf;                                                     // stat 함수가 채워줄 파일 정보(종류, 권한, 크기 등)를 담는다.
+  char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];   // HTTP 요청줄 전체와 method/uri/version 분리 결과를 저장한다.
+  char filename[MAXLINE], cgiargs[MAXLINE];                             // uri를 서버 파일 경로(filename)와 CGI 인자(cgiargs)로 나눠 저장한다.
+  rio_t rio;                                                            // 클라이언트 소켓 fd에서 줄 단위로 안전하게 읽기 위한 RIO 상태다.
 
   /* Read request line and headers */
-  Rio_readinitb(&rio, fd);
-  Rio_readlineb(&rio, buf, MAXLINE);
-  printf("Request headers:\n");
-  printf("%s", buf);
-  sscanf(buf, "%s %s %s", method, uri, version);
-  if (strcasecmp(method, "GET"))
+  Rio_readinitb(&rio, fd);                       // 현재 클라이언트 연결 fd를 RIO 버퍼와 연결한다.
+  Rio_readlineb(&rio, buf, MAXLINE);             // HTTP 요청의 첫 줄(request line)을 읽는다. 예: "GET / HTTP/1.1"
+  printf("Request headers:\n");                  // 서버 터미널에 요청 로그 제목을 출력한다.
+  printf("%s", buf);                             // 방금 읽은 요청줄을 로그로 출력한다.
+  sscanf(buf, "%s %s %s", method, uri, version); // 요청줄을 공백 기준으로 method, uri, version 세 부분으로 나눈다.
+  if (strcasecmp(method, "GET"))                 // Tiny는 GET만 지원하므로, GET이 아니면 에러 응답을 보낸다.
   {
     clienterror(fd, method, "501", "Not implemented",
-                "Tiny does not implement this method");
-    return;
+                "Tiny does not implement this method"); // 지원하지 않는 HTTP 메서드라는 501 에러 페이지를 클라이언트에 보낸다.
+    return;                                             // 에러를 보냈으니 이 요청 처리를 끝낸다.
   }
-  read_requesthdrs(&rio);
+  read_requesthdrs(&rio); // Tiny는 헤더 내용을 쓰지 않지만, 빈 줄까지 읽어서 HTTP 요청을 끝까지 소비해야 한다.
 
   /* Parse URI from GET request */
-  is_static = parse_uri(uri, filename, cgiargs);
-  if (stat(filename, &sbuf) < 0)
+  is_static = parse_uri(uri, filename, cgiargs); // URI를 분석해서 정적/동적 여부, 실제 파일 경로, CGI 인자를 구한다.
+  if (stat(filename, &sbuf) < 0)                 // 파일 시스템에서 filename이 존재하는지 확인하고, 존재하면 sbuf에 정보를 채운다.
   {
     clienterror(fd, filename, "404", "Not found",
-                "Tiny couldn't find this file");
-    return;
+                "Tiny couldn't find this file"); // 요청한 파일이 없다는 404 에러 페이지를 클라이언트에 보낸다.
+    return;                                      // 더 처리할 파일이 없으므로 요청 처리를 끝낸다.
   }
 
   if (is_static)
   {
     /* Serve static content */
-    if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode))
+    if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) // 정적 콘텐츠는 일반 파일이어야 하고, 서버가 읽을 수 있어야 한다.
     {
       clienterror(fd, filename, "403", "Forbidden",
-                  "Tiny couldn't read the file");
-      return;
+                  "Tiny couldn't read the file"); // 파일은 있지만 읽을 수 없다는 403 에러 페이지를 보낸다.
+      return;                                     // 읽을 수 없으므로 요청 처리를 끝낸다.
     }
-    serve_static(fd, filename, sbuf.st_size);
+    serve_static(fd, filename, sbuf.st_size); // 파일 크기를 포함한 응답 헤더를 만들고, 파일 내용을 클라이언트에 보낸다.
   }
   else
   {
     /* Serve dynamic content */
-    if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode))
+    if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) // 동적 콘텐츠는 CGI 실행 파일이어야 하므로 실행 권한이 있어야 한다.
     {
       clienterror(fd, filename, "403", "Forbidden",
-                  "Tiny couldn't run the CGI program");
-      return;
+                  "Tiny couldn't run the CGI program"); // CGI 파일은 있지만 실행할 수 없다는 403 에러 페이지를 보낸다.
+      return;                                           // 실행할 수 없으므로 요청 처리를 끝낸다.
     }
-    serve_dynamic(fd, filename, cgiargs);
+    serve_dynamic(fd, filename, cgiargs); // CGI 프로그램을 실행하고, 그 출력이 클라이언트로 가게 만든다.
   }
 }
 
